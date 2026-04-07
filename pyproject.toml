@@ -1,0 +1,18 @@
+[project]
+name = "nerfstudio360"
+version = "1.0.0"
+
+# dependencies=["nerfstudio==1.1.5"]
+
+[tool.setuptools.packages.find]
+include = ["nerfstudio360*"]
+
+[project.entry-points.'nerfstudio.dataparser_configs']
+opensfm-dataparser = 'nerfstudio360.dataparser360_configs:OpenSfMDataParser'
+openmvg-dataparser = 'nerfstudio360.dataparser360_configs:OpenMVGDataParser'
+ob3d-dataparser = 'nerfstudio360.dataparser360_configs:OB3DDataParser'
+odgs-dataparser = 'nerfstudio360.dataparser360_configs:ODGSDataParser'
+
+[project.entry-points.'nerfstudio.method_configs']
+
+pfgs360 = 'nerfstudio360.nerfstudio360_configs:pfgs360'

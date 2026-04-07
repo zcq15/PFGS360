@@ -1,0 +1,11 @@
+from nerfstudio.plugins.registry_dataparser import DataParserSpecification
+from nerfstudio360.dataparsers.opensfm_dataparser import OpenSfMDataParserConfig
+from nerfstudio360.dataparsers.openmvg_dataparser import OpenMVGDataParserConfig
+from nerfstudio360.dataparsers.ob3d_dataparser import OB3DDataParserConfig
+from nerfstudio360.dataparsers.odgs_dataparser import ODGSDataParserConfig
+
+
+OpenSfMDataParser = DataParserSpecification(config=OpenSfMDataParserConfig())
+OpenMVGDataParser = DataParserSpecification(config=OpenMVGDataParserConfig())
+OB3DDataParser = DataParserSpecification(config=OB3DDataParserConfig())
+ODGSDataParser = DataParserSpecification(config=ODGSDataParserConfig())
