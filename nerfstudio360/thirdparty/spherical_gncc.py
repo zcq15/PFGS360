@@ -1,10 +1,11 @@
 from typing import Optional, Tuple
+
 import torch
+from kornia.core.check import KORNIA_CHECK_SHAPE
+from nerfstudio360.thirdparty.spherical_convolution import compute_maps
 from spherical_distortion.functional import mapped_convolution
 from spherical_distortion.layer_utils import InterpolationType
 from torch import Tensor
-from kornia.core.check import KORNIA_CHECK_SHAPE
-from nerfstudio360.thirdparty.spherical_convolution import compute_maps
 
 
 def _fspecial_gauss_1d(size: int, sigma: float) -> Tensor:

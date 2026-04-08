@@ -1,17 +1,15 @@
+import os
+
 import cv2
 import numpy as np
-import torch
-from packaging.version import Version
-from plyfile import PlyData, PlyElement
-from kornia.core.check import KORNIA_CHECK_SHAPE
-from PIL import Image
-import os
-from nerfstudio.utils import colormaps
-from matplotlib import pyplot as plt
-import torch.nn.functional as F
-from scipy import interpolate
-from matplotlib import cm
 import open3d
+import torch
+from kornia.core.check import KORNIA_CHECK_SHAPE
+from matplotlib import cm
+from matplotlib import pyplot as plt
+from nerfstudio.utils import colormaps
+from PIL import Image
+from scipy import interpolate
 
 turbo_colormap_data = [
     [0.18995, 0.07176, 0.23217],

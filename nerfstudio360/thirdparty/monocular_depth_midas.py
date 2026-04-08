@@ -1,8 +1,8 @@
 import warnings
-import torch
+
 import numpy as np
+import torch
 from PIL import Image
-from torchvision import transforms
 
 warnings.filterwarnings("ignore")
 

@@ -1,13 +1,10 @@
 import torch
-from tqdm import tqdm
-from nerfstudio360.thirdparty.monocular_depth_zoedepth import ZoeDepth
-from nerfstudio360.thirdparty.monocular_depth_midas import MiDaS
-from depth_anywhere.depth_anywhere import DepthAnywhere
-from nerfstudio360.thirdparty.monocular_depth_unik3d import UniK3D
-from nerfstudio360.utils.camera_utils import E_DEP, E_TAN
-import numpy as np
-from nerfstudio.utils.rich_utils import CONSOLE
 from da2 import DA2
+from depth_anywhere.depth_anywhere import DepthAnywhere
+from nerfstudio360.thirdparty.monocular_depth_midas import MiDaS
+from nerfstudio360.thirdparty.monocular_depth_unik3d import UniK3D
+from nerfstudio360.thirdparty.monocular_depth_zoedepth import ZoeDepth
+from tqdm import tqdm
 
 
 @torch.no_grad()

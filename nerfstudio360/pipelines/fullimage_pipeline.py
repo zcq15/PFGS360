@@ -17,38 +17,28 @@ Abstracts for the Pipeline class.
 """
 from __future__ import annotations
 
+import copy
 import typing
-from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import time
-from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, Type, Union, cast
-import copy
+from typing import Any, Dict, List, Literal, Optional, Type, Union, cast
 
+import numpy as np
+import open3d
 import torch
 import torch.distributed as dist
+from nerfstudio.data.datamanagers.base_datamanager import DataManager, VanillaDataManager
+from nerfstudio.engine.callbacks import TrainingCallback, TrainingCallbackAttributes
+from nerfstudio.models.base_model import Model
+from nerfstudio.pipelines.base_pipeline import Pipeline, VanillaPipeline, VanillaPipelineConfig
+from nerfstudio.utils import profiler
+from nerfstudio.utils.rich_utils import CONSOLE
+from PIL import Image
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
-from torch import nn
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.nn import Parameter
 from torch.nn.parallel import DistributedDataParallel as DDP
-
-from nerfstudio.configs import base_config as cfg
-from nerfstudio.data.datamanagers.base_datamanager import (
-    DataManager,
-    DataManagerConfig,
-)
-from nerfstudio.data.datamanagers.base_datamanager import VanillaDataManager
-from nerfstudio.engine.callbacks import TrainingCallback, TrainingCallbackAttributes
-from nerfstudio.models.base_model import Model, ModelConfig
-from nerfstudio.utils import profiler
-from nerfstudio.utils.rich_utils import CONSOLE
-
-
-from nerfstudio.pipelines.base_pipeline import VanillaPipeline, VanillaPipelineConfig, Pipeline
-from PIL import Image
-import numpy as np
-import open3d
 
 
 def module_wrapper(ddp_or_model: Union[DDP, Model]) -> Model:

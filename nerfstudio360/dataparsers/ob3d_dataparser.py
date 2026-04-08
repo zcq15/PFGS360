@@ -15,26 +15,22 @@
 
 from __future__ import annotations
 
+import json
 import os
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional, Type
 
 import numpy as np
+import open3d
 import torch
-from PIL import Image
-import ipdb
-
+from nerfstudio360.utils import io_utils
 from nerfstudio.cameras import camera_utils
-from nerfstudio.cameras.cameras import CAMERA_MODEL_TO_TYPE, Cameras, CameraType
+from nerfstudio.cameras.cameras import CAMERA_MODEL_TO_TYPE, Cameras
 from nerfstudio.data.dataparsers.base_dataparser import DataParser, DataParserConfig, DataparserOutputs
 from nerfstudio.data.scene_box import SceneBox
 from nerfstudio.utils.rich_utils import CONSOLE
-from collections import OrderedDict
-import open3d
-import cv2
-import json
-from nerfstudio360.utils import io_utils
 
 MAX_AUTO_RESOLUTION = 6400
 

@@ -1,16 +1,6 @@
-from typing import List, Literal, Optional
-
-import numpy as np
 import torch
 import torch.nn.functional as F
-import trimesh
-from kornia.core.check import KORNIA_CHECK_SHAPE
-
-from nerfstudio.cameras.camera_optimizers import CameraOptimizer
 from nerfstudio.cameras.cameras import Cameras, CameraType
-
-from nerfstudio360.thirdparty import pytorch3d_transforms
-
 
 E_TAN = 0.008
 E_DEP = 0.05

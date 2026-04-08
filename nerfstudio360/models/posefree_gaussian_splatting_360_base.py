@@ -2,47 +2,40 @@ import copy
 import json
 import os
 import random
+import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from os.path import join
 from typing import Dict, List, Optional, Tuple, Type, Union
-import cv2
 
-
-import time
-from PIL import Image
-import imageio
-import ipdb
 import numpy as np
-import math
 import torch
 import tqdm
+from nerfstudio360.thirdparty.spherical_blur import SphericalBlur
+from nerfstudio360.thirdparty.spherical_gncc import SphericalGNCC
+from nerfstudio360.thirdparty.spherical_ssim import SphericalSSIM
+from nerfstudio360.utils import camera_utils, colmap_free_utils, io_utils, pose_utils
+from nerfstudio360.utils.camera_utils import build_posed_camera, build_unposed_camera
+from nerfstudio360.utils.colmap_free_utils import GrowthState as GS
+from nerfstudio360.utils.depth_utils import (
+    compute_aligned_depth,
+    generate_depth_sequence,
+    generate_equir_depth_sequence,
+)
 from nerfstudio.cameras.camera_optimizers import CameraOptimizer, CameraOptimizerConfig
-from nerfstudio.cameras.cameras import Cameras, CameraType
 from nerfstudio.cameras.camera_paths import get_interpolated_camera_path
+from nerfstudio.cameras.cameras import Cameras, CameraType
 from nerfstudio.engine.callbacks import TrainingCallback, TrainingCallbackAttributes, TrainingCallbackLocation
 from nerfstudio.engine.optimizers import Optimizers
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
+from nerfstudio.utils.rich_utils import CONSOLE
+from PIL import Image
 from pytorch_msssim import SSIM
 from torchmetrics.image import PeakSignalNoiseRatio
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from typing_extensions import Literal
 
 from gsplat360.optimizers import SelectiveAdam
-from nerfstudio360.thirdparty.spherical_ssim import SphericalSSIM
-from nerfstudio360.thirdparty.spherical_gncc import SphericalGNCC
-from nerfstudio360.thirdparty.spherical_blur import SphericalBlur
-
-from nerfstudio360.utils import camera_utils, colmap_free_utils, io_utils, pose_utils
-from nerfstudio360.utils.camera_utils import build_unposed_camera, build_posed_camera
-from nerfstudio360.utils.colmap_free_utils import GrowthState as GS
-from nerfstudio360.utils.depth_utils import (
-    generate_depth_sequence,
-    generate_equir_depth_sequence,
-    compute_aligned_depth,
-)
-from nerfstudio.utils.rich_utils import CONSOLE
 
 json.encoder.FLOAT_REPR = lambda o: format(o, ".4f")
 
@@ -132,12 +125,12 @@ class PoseFreeGSplat360BaseModelConfig(ModelConfig):
     """Use Gaussian blur smoothing on the obtained in-/consistent masks"""
     filter_sky: bool = True
     """Ignore sky areas with depth > 300 for camera optimization and gaussian growing"""
-    sky_depth: float = 100.0
+    sky_depth: float = 50.0
 
     # Gaussians regularization
     opacity_ratio: float = 0.01
-    scale_ratio: float = 0.01
-    phys_ratio: float = 0.1
+    scale_ratio: float = 0
+    phys_ratio: float = 0
     dist_ratio: float = 0.01
 
     background_color: Literal["random", "black", "white"] = "random"
@@ -159,9 +152,9 @@ class PoseFreeGSplat360BaseModelConfig(ModelConfig):
 
     initial_interval: int = 1000
     """interval of initial monocular training"""
-    refine_interval: int = 500
+    camera_interval: int = 500
     """interval of camera pose refinement"""
-    global_interval: int = 500
+    joint_interval: int = 500
     """interval of global Gaussians optimization"""
     finetune_interval: int = 15000
     """interval of finetune training after growing of all frames"""
@@ -189,8 +182,8 @@ class PoseFreeGSplat360BaseModel(Model):
         **kwargs,
     ):
         config = args[0]
-        assert config.global_interval % config.refine_every == 0
-        growth_steps = config.initial_interval + config.global_interval * (len(train_cameras) - 1)
+        assert config.joint_interval % config.refine_every == 0
+        growth_steps = config.initial_interval + config.joint_interval * (len(train_cameras) - 1)
 
         if config.camera_type == "spherical":
             assert (train_cameras.camera_type == CameraType.EQUIRECTANGULAR.value).all() and (
@@ -228,14 +221,14 @@ class PoseFreeGSplat360BaseModel(Model):
             lr_init=config.initial_gaussian_lr,
             lr_final=config.final_gaussian_lr,
             lr_delay_mult=0.01,
-            lr_delay_steps=config.global_interval,
+            lr_delay_steps=config.joint_interval,
             max_steps=config.finetune_interval,
         )
         self.camera_scheduler_args = get_expon_lr_func(
             lr_init=config.joint_camera_lr,
             lr_final=config.final_camera_lr,
             lr_delay_mult=0.01,
-            lr_delay_steps=config.global_interval,
+            lr_delay_steps=config.joint_interval,
             max_steps=config.finetune_interval,
         )
 
@@ -276,17 +269,17 @@ class PoseFreeGSplat360BaseModel(Model):
         self.growth_stage = GS.DONE
 
         self.initial_length = self.config.initial_interval
-        self.refine_interval = self.config.refine_interval
-        self.global_interval = self.config.global_interval
-        self.growth_interval = self.refine_interval + self.global_interval
+        self.camera_interval = self.config.camera_interval
+        self.joint_interval = self.config.joint_interval
+        self.growth_interval = self.camera_interval + self.joint_interval
         self.growth_length = self.growth_interval * (len(self.train_unposed_cameras) - 1)
 
         self.finetune_interval = self.config.finetune_interval
-        self.finetune_length = self.config.global_interval + self.config.finetune_interval
+        self.finetune_length = self.config.joint_interval + self.config.finetune_interval
 
         self.early_stop_at = self.initial_length + self.growth_length + self.finetune_length
         self.start_refine_at = self.initial_length
-        self.stop_refine_at = self.initial_length + self.growth_length + self.global_interval
+        self.stop_refine_at = self.initial_length + self.growth_length + self.joint_interval
 
         self.start_time = time.perf_counter()
 
@@ -706,7 +699,7 @@ class PoseFreeGSplat360BaseModel(Model):
             lr_init=self.config.joint_camera_lr,
             lr_final=self.config.final_camera_lr,
             lr_delay_mult=0.01,
-            max_steps=self.config.refine_interval,
+            max_steps=self.config.camera_interval,
         )
 
         for eval_index in tqdm.tqdm(range(len(self.eval_unposed_cameras))):
@@ -721,7 +714,7 @@ class PoseFreeGSplat360BaseModel(Model):
                     force_enable=True,
                 )
 
-            for it in range(self.config.refine_interval):
+            for it in range(self.config.camera_interval):
 
                 if isinstance(optimizer, SelectiveAdam):
                     optimizer.set_index(
@@ -772,7 +765,7 @@ class PoseFreeGSplat360BaseModel(Model):
                 torch.nn.utils.clip_grad_value_(self.eval_camera_optimizer.pose_adjustment, clip_value=1e-3)
                 optimizer.step()
 
-            for it in range(self.config.refine_interval):
+            for it in range(self.config.camera_interval):
 
                 if isinstance(optimizer, SelectiveAdam):
                     optimizer.set_index(
@@ -823,8 +816,8 @@ class PoseFreeGSplat360BaseModel(Model):
     def config_growth_stage(self, step: int):
         # set growth states
         initial_length = self.initial_length
-        refine_interval = self.refine_interval
-        global_interval = self.global_interval
+        camera_interval = self.camera_interval
+        joint_interval = self.joint_interval
         growth_interval = self.growth_interval
         growth_length = self.growth_length
         finetune_length = self.finetune_length
@@ -838,9 +831,9 @@ class PoseFreeGSplat360BaseModel(Model):
         elif (
             step >= initial_length
             and step < initial_length + growth_length
-            and (step - initial_length) % growth_interval < refine_interval
+            and (step - initial_length) % growth_interval < camera_interval
         ):
-            self.growth_stage = GS.RELATIVE
+            self.growth_stage = GS.CAMERA
             self.growth_index = 1 + (step - initial_length) // growth_interval
             self.growth_step = (step - initial_length) % growth_interval
             if self.config.refine_visited:
@@ -854,11 +847,11 @@ class PoseFreeGSplat360BaseModel(Model):
         elif (
             step >= initial_length
             and step < initial_length + growth_length
-            and (step - initial_length) % growth_interval >= refine_interval
+            and (step - initial_length) % growth_interval >= camera_interval
         ):
-            self.growth_stage = GS.GLOBAL
+            self.growth_stage = GS.JOINT
             self.growth_index = 1 + (step - initial_length) // growth_interval
-            self.growth_step = (step - initial_length) % growth_interval - refine_interval
+            self.growth_step = (step - initial_length) % growth_interval - camera_interval
             if random.random() < 0.7:
                 self.train_index = random.randint(self.growth_index // 2, self.growth_index)
             else:
@@ -869,7 +862,7 @@ class PoseFreeGSplat360BaseModel(Model):
             self.growth_stage = GS.FINETUNE
             self.growth_index = self.num_train_data - 1
             self.growth_step = step - initial_length - growth_length
-            if self.growth_step < self.global_interval:
+            if self.growth_step < self.joint_interval:
                 if random.random() < 0.7:
                     self.train_index = random.randint(self.growth_index // 2, self.growth_index)
                 else:
@@ -889,7 +882,7 @@ class PoseFreeGSplat360BaseModel(Model):
         if self.growth_stage == GS.INITIAL:
             for param_group in optimizers.optimizers["means"].param_groups:
                 param_group["lr"] = self.config.initial_gaussian_lr
-        if self.growth_stage == GS.GLOBAL:
+        if self.growth_stage == GS.JOINT:
             for param_group in optimizers.optimizers["means"].param_groups:
                 param_group["lr"] = self.config.initial_gaussian_lr
         if self.growth_stage == GS.FINETUNE:
@@ -897,21 +890,21 @@ class PoseFreeGSplat360BaseModel(Model):
             for param_group in optimizers.optimizers["means"].param_groups:
                 param_group["lr"] = lr
 
-        if self.growth_stage == GS.RELATIVE:
+        if self.growth_stage == GS.CAMERA:
             for param_group in optimizers.optimizers["camera_opt"].param_groups:
                 param_group["lr"] = self.config.refine_camera_lr
 
             # if not self.config.pnp_match:
-            #     times = min(self.growth_step, self.config.refine_interval)
+            #     times = min(self.growth_step, self.config.camera_interval)
             #     lr_max = self.config.refine_camera_lr
             #     lr_min = self.config.joint_camera_lr
             #     lr = lr_min + (lr_max - lr_min) * max(
-            #         0.5 * (math.cos(times / self.config.refine_interval * math.pi) + 1), 0
+            #         0.5 * (math.cos(times / self.config.camera_interval * math.pi) + 1), 0
             #     )
             #     for param_group in optimizers.optimizers["camera_opt"].param_groups:
             #         param_group["lr"] = lr
 
-        if self.growth_stage == GS.GLOBAL:
+        if self.growth_stage == GS.JOINT:
             for param_group in optimizers.optimizers["camera_opt"].param_groups:
                 param_group["lr"] = self.config.joint_camera_lr
         if self.growth_stage == GS.FINETUNE:
@@ -949,12 +942,12 @@ class PoseFreeGSplat360BaseModel(Model):
             self.initial_points(training_callback_attributes)
             self.set_parameter("initial")
 
-        if self.growth_stage == GS.RELATIVE and self.growth_step == 0:
+        if self.growth_stage == GS.CAMERA and self.growth_step == 0:
             self.set_parameter("cameras")
             self.register_train_camera(match_views=self.config.match_views)
             self.set_parameter("cameras")
 
-        if self.growth_stage == GS.GLOBAL and self.growth_step == 0:
+        if self.growth_stage == GS.JOINT and self.growth_step == 0:
             self.set_parameter("all")
             if self.config.inlier_growth:
                 self.inlier_growing(training_callback_attributes, last_index=self.growth_index - 1)
@@ -1200,7 +1193,7 @@ class PoseFreeGSplat360BaseModel(Model):
         if (
             self.config.consist_refine
             and self.training
-            and self.growth_stage in [GS.INITIAL, GS.RELATIVE, GS.GLOBAL, GS.FINETUNE]
+            and self.growth_stage in [GS.INITIAL, GS.CAMERA, GS.JOINT, GS.FINETUNE]
         ):
             confs = self.growing_status["confs"]
             counts = self.growing_status["counts"]
@@ -1428,7 +1421,7 @@ class PoseFreeGSplat360BaseModel(Model):
 
     @torch.no_grad()
     def _loss_consist_weight(self, outputs, batch=None):
-        if not self.growth_stage == GS.RELATIVE or not self.config.consist_refine:
+        if not self.growth_stage == GS.CAMERA or not self.config.consist_refine:
             return 1.0
         else:
             consist = self._consist_mask(self.train_index)
@@ -1471,7 +1464,7 @@ class PoseFreeGSplat360BaseModel(Model):
         main_loss = self._photo_loss(gt_img=gt_img, pred_img=pred_img, weights=weights, spherical=self.spherical)
 
         # compute scale regularization loss
-        use_scale_regularization = self.growth_stage in [GS.INITIAL, GS.GLOBAL, GS.FINETUNE]
+        use_scale_regularization = self.growth_stage in [GS.INITIAL, GS.JOINT, GS.FINETUNE]
         if use_scale_regularization and self.step % 10 == 0 and self.config.phys_ratio > 0:
             if self.config.filter_sky:
                 scales = torch.exp(self.gauss_params["scales"][self.growing_status["skys"] < 0.8])
@@ -1486,7 +1479,7 @@ class PoseFreeGSplat360BaseModel(Model):
         scale_reg = scale_reg.nan_to_num_(0.0, 0.0, 0.0)
 
         # compute distortion regularization loss
-        use_distortion_regularization = self.growth_stage in [GS.INITIAL, GS.GLOBAL, GS.FINETUNE]
+        use_distortion_regularization = self.growth_stage in [GS.INITIAL, GS.JOINT, GS.FINETUNE]
         if use_distortion_regularization and self.config.dist_ratio > 0:
             depth_dist = balance * outputs["render_distort"] / outputs["depth"].clip(min=1e-3)
             depth_dist = self.config.dist_ratio * depth_dist.mean()
@@ -1504,7 +1497,7 @@ class PoseFreeGSplat360BaseModel(Model):
         if use_depth_regularization:
             loss_dict.update(self.get_depth_loss_dict(outputs, batch))
 
-        use_mcmc_regularization = self.growth_stage in [GS.INITIAL, GS.GLOBAL, GS.FINETUNE]
+        use_mcmc_regularization = self.growth_stage in [GS.INITIAL, GS.JOINT, GS.FINETUNE]
         if use_mcmc_regularization and self.config.opacity_ratio > 0:
             mcmc_opacity_reg = torch.sigmoid(self.gauss_params["opacities"])
             loss_dict["mcmc_opacity_reg"] = self.config.opacity_ratio * mcmc_opacity_reg.mean().nan_to_num_(

@@ -15,12 +15,11 @@ json.encoder.FLOAT_REPR = lambda o: format(o, ".4f")
 
 class GrowthState(Enum):
     INITIAL = 0
-    MONOCULAR = 1
-    RELATIVE = 2
-    GLOBAL = 3
-    FINETUNE = 4
-    EVALUATE = 5
-    DONE = 6
+    CAMERA = 1
+    JOINT = 2
+    FINETUNE = 3
+    EVALUATE = 4
+    DONE = 5
 
 
 def selected_poses(self, selected_indices) -> torch.Tensor:

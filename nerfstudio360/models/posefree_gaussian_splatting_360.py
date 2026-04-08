@@ -4,37 +4,32 @@ import math
 import os
 import random
 from dataclasses import dataclass, field
-from os.path import join
 from typing import Dict, List, Optional, Type, Union
-import ipdb
+
 import numpy as np
 import open3d
 import open3d as o3d
 import torch
 import torch_scatter
 import tqdm
-from gsplat360 import rasterization
-from nerfstudio.cameras.camera_optimizers import CameraOptimizer
-from nerfstudio.cameras.cameras import Cameras, CameraType
-from nerfstudio.engine.callbacks import TrainingCallback, TrainingCallbackAttributes, TrainingCallbackLocation
-from nerfstudio.engine.optimizers import Optimizers
-from nerfstudio.model_components import renderers
-from nerfstudio.models.splatfacto import RGB2SH, SH2RGB, get_viewmat, num_sh_bases, quat_to_rotmat, random_quat_tensor
-from nerfstudio.utils.rich_utils import CONSOLE
-from torch.nn import Parameter
-from torch.nn import functional as F
-from scipy.spatial import cKDTree
-import copy
-import time
-from gsplat360.optimizers import SelectiveAdam
 from nerfstudio360.models.posefree_gaussian_splatting_360_base import (
     PoseFreeGSplat360BaseModel,
     PoseFreeGSplat360BaseModelConfig,
 )
 from nerfstudio360.utils import camera_utils, colmap_free_utils, io_utils
-from nerfstudio360.utils.camera_utils import build_posed_camera, build_unposed_camera, E_TAN, E_DEP
+from nerfstudio360.utils.camera_utils import build_posed_camera
 from nerfstudio360.utils.colmap_free_utils import GrowthState as GS
 from nerfstudio360.utils.depth_utils import compute_aligned_depth
+from nerfstudio.cameras.camera_optimizers import CameraOptimizer
+from nerfstudio.cameras.cameras import Cameras, CameraType
+from nerfstudio.engine.callbacks import TrainingCallback, TrainingCallbackAttributes, TrainingCallbackLocation
+from nerfstudio.engine.optimizers import Optimizers
+from nerfstudio.models.splatfacto import RGB2SH, SH2RGB, get_viewmat, num_sh_bases, quat_to_rotmat, random_quat_tensor
+from nerfstudio.utils.rich_utils import CONSOLE
+from torch.nn import Parameter
+
+from gsplat360 import rasterization
+from gsplat360.optimizers import SelectiveAdam
 
 json.encoder.FLOAT_REPR = lambda o: format(o, ".4f")
 
@@ -397,30 +392,18 @@ class PoseFreeGSplat360Model(PoseFreeGSplat360BaseModel):
         if last_index <= 0:
             return
 
-        # start_time = time.perf_counter()
-
         num_points_before = self.num_points
-
-        # indices = list(range(last_index + 1))
-        # start_index = indices[0]
-        # end_index = indices[-1]
 
         start_index = 0 if self.config.densify_views == 0 else max(0, last_index - self.config.densify_views + 1)
         end_index = last_index + 1
         indices = list(range(start_index, end_index))
 
-        start_time = time.perf_counter()
         # compute render depth
         render_depths = {}
         for index in indices:
             with torch.no_grad():
                 render_depths[index] = self._train_view(index)["depth"]
-        end_time = time.perf_counter()
-        CONSOLE.print(
-            f"render depth for views {indices}, {(end_time - start_time)/max(1,len(indices)):.4f} seconds per frame"
-        )
 
-        start_time = time.perf_counter()
         # compute consist mask without sky
         render_consists = {}
         for index in indices:
@@ -497,16 +480,6 @@ class PoseFreeGSplat360Model(PoseFreeGSplat360BaseModel):
                 mono_inliers[index] = torch.logical_and(
                     mono_inliers[index], torch.logical_not(self.train_backgrounds[index])
                 )
-
-        end_time = time.perf_counter()
-        CONSOLE.print(
-            f"compute 2d attr maps for views {indices}, {(end_time - start_time)/max(1,len(indices)):.4f} seconds per frame"
-        )
-
-        # end_time = time.perf_counter()
-        # CONSOLE.print(f"compute 2d maps in inlier growing for {len(indices)} views: {end_time - start_time:.4f}s")
-
-        # start_time = time.perf_counter()
 
         # compute inconsist points
         inc_hits = torch.zeros([self.num_points], dtype=torch.int32, device=self.device)
@@ -608,26 +581,8 @@ class PoseFreeGSplat360Model(PoseFreeGSplat360BaseModel):
                 seed_colors.clone().detach(),
             )
 
-        # end_time = time.perf_counter()
-        # CONSOLE.print(f"lift 2d maps to 3d in inlier growing for {len(indices)} views: {end_time - start_time:.4f}s")
-
         del render_depths, render_consists, render_inconsists, aligned_depth, mono_inliers
         torch.cuda.empty_cache()
-
-        # if num_culls >= 100 or num_resets >= 100 or num_inliers >= 100:
-        #     self.after_reset(training_callback_attributes, indices)
-
-        # # remove inconsist points
-        # culls = (torch.sigmoid(self.opacities) < self.config.cull_alpha_thresh).squeeze()
-
-        # for name, param in self.gauss_params.items():
-        #     self.gauss_params[name] = torch.nn.Parameter(param[~culls])
-
-        # for key in ["grads", "counts", "maxsize", "confs", "times", "skys"]:
-        #     if key in self.growing_status:
-        #         self.growing_status[key] = self.growing_status[key][~culls].clone().detach()
-
-        # self.remove_from_all_optim(training_callback_attributes.optimizers, culls)
 
         num_points_after = self.num_points
         CONSOLE.print(
@@ -944,9 +899,9 @@ class PoseFreeGSplat360Model(PoseFreeGSplat360BaseModel):
         gaussian_growth = (
             step >= self.start_refine_at
             and step < self.stop_refine_at
-            and self.growth_stage in [GS.INITIAL, GS.GLOBAL, GS.FINETUNE]
+            and self.growth_stage in [GS.INITIAL, GS.JOINT, GS.FINETUNE]
         )
-        confidence_update = self.config.consist_aware and self.growth_stage in [GS.INITIAL, GS.GLOBAL, GS.FINETUNE]
+        confidence_update = self.config.consist_aware and self.growth_stage in [GS.INITIAL, GS.JOINT, GS.FINETUNE]
 
         if gaussian_growth or confidence_update:
             self.update_statis()
@@ -981,7 +936,7 @@ class PoseFreeGSplat360Model(PoseFreeGSplat360BaseModel):
         self.set_parameter("all")
         self.train(mode=True)
 
-        iters = self.config.global_interval
+        iters = self.config.joint_interval
         CONSOLE.print(f"after resetting, train with {iters} iters")
 
         for _ in tqdm.tqdm(range(iters)):
@@ -1112,7 +1067,7 @@ class PoseFreeGSplat360Model(PoseFreeGSplat360BaseModel):
             return 0
         elif self.growth_stage == GS.RELATIVE:
             return min(self.config.sh_degree, int(math.sqrt(self.growth_index - 1)))
-        elif self.growth_stage in [GS.GLOBAL]:
+        elif self.growth_stage in [GS.JOINT]:
             return min(self.config.sh_degree, int(math.sqrt(self.growth_index)))
         else:
             return self.config.sh_degree

@@ -1,17 +1,15 @@
-import copy
 import math
-import kornia
-import ipdb
+import time
+
+import cv2
 import numpy as np
 import torch
-from nerfstudio.cameras.cameras import Cameras, CameraType
-from nerfstudio.cameras.camera_optimizers import CameraOptimizer, CameraOptimizerConfig
+from kornia.core.check import KORNIA_CHECK_SHAPE
 from nerfstudio360.utils import camera_utils
-from nerfstudio360.utils.camera_utils import E_TAN, E_DEP
-from kornia.core.check import KORNIA_CHECK_IS_TENSOR, KORNIA_CHECK_SHAPE
+from nerfstudio360.utils.camera_utils import E_TAN
+from nerfstudio.cameras.camera_optimizers import CameraOptimizerConfig
+from nerfstudio.cameras.cameras import Cameras
 from nerfstudio.utils.rich_utils import CONSOLE
-import time
-import cv2
 
 
 @torch.no_grad()

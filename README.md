@@ -17,10 +17,7 @@ pip install kornia einops torch-tb-profiler ipdb plyfile timm open3d opencv-pyth
 
 pip install git+https://github.com/nerfstudio-project/nerfstudio@v1.1.5
 pip install git+https://github.com/rusty1s/pytorch_scatter@2.1.2
-pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
-pip install git+https://github.com/princeton-vl/lietorch
 pip install git+https://github.com/facebookresearch/pytorch3d@v0.7.7
-pip install git+https://github.com/thomgrand/torch_kdtree
 ```
 
 In addition, you also need to install the following packages:

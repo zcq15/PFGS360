@@ -1,5 +1,5 @@
 from nerfstudio.engine.trainer import Trainer
-from typing import DefaultDict, Dict, List, Literal, Optional, Tuple, Type, cast
+from typing import Dict, Tuple, cast
 from nerfstudio.utils import profiler
 import torch
 import functools
