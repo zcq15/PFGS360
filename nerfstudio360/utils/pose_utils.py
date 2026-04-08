@@ -1,5 +1,4 @@
 import math
-import time
 
 import cv2
 import numpy as np
@@ -415,16 +414,13 @@ def compute_camera_pose(
     match_confs = []
 
     for idx in range(len(src_cameras)):
-        start_time = time.perf_counter()
         matches_im0, matches_im1 = _get_match_pairs(src_images[idx], src_valids[idx], tar_images[0], tar_valids[0])
-        end_time = time.perf_counter()
         assert matches_im0.shape[0] == matches_im1.shape[0]
-        CONSOLE.print(
-            f"sift match pairs for view {src_uids[idx]} and {tar_uids[0]}: {matches_im0.shape[0]} pairs, {end_time - start_time:.3f} seconds"
-        )
+        CONSOLE.print(f"sift match pairs for view {src_uids[idx]} and {tar_uids[0]}: {matches_im0.shape[0]} pairs")
+
         if matches_im0.shape[0] < 100 and len(src_cameras) > 1:
             continue
-        start_time = time.perf_counter()
+
         matches_im0, matches_im1 = _filter_match_pairs(
             src_unposed_cameras[idx : idx + 1],
             tar_unposed_cameras,
@@ -432,17 +428,11 @@ def compute_camera_pose(
             matches_im1,
             config,
         )
-        end_time = time.perf_counter()
         CONSOLE.print(
-            f"filter epipolar match pairs for view {src_uids[idx]} and {tar_uids[0]}: {matches_im0.shape[0]} pairs, {end_time - start_time:.3f} seconds"
+            f"filter epipolar match pairs for view {src_uids[idx]} and {tar_uids[0]}: {matches_im0.shape[0]} pairs"
         )
 
-        start_time = time.perf_counter()
         confs = compute_confidence(matches_im0, matches_im1, src_valids[idx], tar_valids[0], spherical=spherical)
-        end_time = time.perf_counter()
-        CONSOLE.print(
-            f"compute confidence time for view {src_uids[idx]} and {tar_uids[0]}: {end_time - start_time:.3f} seconds"
-        )
 
         assert matches_im0.shape[0] == matches_im1.shape[0]
         if matches_im0.shape[0] < 100 and len(src_cameras) > 1:
@@ -477,15 +467,11 @@ def compute_camera_pose(
     initial_index = inliers_num.argmax().item()
     initial_poses = src_poses[initial_index : initial_index + 1].clone().detach()
 
-    start_time = time.perf_counter()
     coarse_poses, world_points, camera_dirs, match_confs = _get_pnp_pose(
         world_points, camera_dirs, match_confs, initial_poses, config
     )
-    end_time = time.perf_counter()
     CONSOLE.print(
-        f"final match pairs for views {camera_uids} and {tar_uids[0]}: {world_points.shape[0]} pairs, {end_time - start_time:.3f} seconds"
+        f"compute relative camera pose for views {camera_uids} and {tar_uids[0]}: {world_points.shape[0]} pairs"
     )
 
     return coarse_poses
-    # tar_poses = _refine_pnp_pose(world_points, camera_dirs, coarse_poses, config)
-    # return tar_poses
