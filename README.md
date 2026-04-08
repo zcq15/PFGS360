@@ -12,8 +12,7 @@ The code requires an environment with **PyTorch >= 2.0** and **CUDA >= 11.7**. Y
 conda create -n pfgs360 python=3.11
 conda activate pfgs360
 pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
-pip install numpy==1.26.4 matplotlib==3.7.2 evo==1.13.1 ninja pillow pandas tensorboard scikit-image scikit-learn scipy tqdm pylint ipython jupyter shapely colorama wheel pybind11
-pip install kornia einops torch-tb-profiler ipdb plyfile timm open3d opencv-python  nvitop pyproj openEXR
+pip install numpy==1.26.4 matplotlib==3.7.2 evo==1.13.1 ninja pillow scikit-image scikit-learn scipy tqdm shapely colorama wheel pybind11 kornia einops timm open3d opencv-python pyproj openEXR
 
 pip install git+https://github.com/nerfstudio-project/nerfstudio@v1.1.5
 pip install git+https://github.com/rusty1s/pytorch_scatter@2.1.2
