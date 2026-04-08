@@ -1065,7 +1065,7 @@ class PoseFreeGSplat360Model(PoseFreeGSplat360BaseModel):
     def get_sh_degree(self):
         if self.growth_stage == GS.INITIAL:
             return 0
-        elif self.growth_stage == GS.RELATIVE:
+        elif self.growth_stage == GS.CAMERA:
             return min(self.config.sh_degree, int(math.sqrt(self.growth_index - 1)))
         elif self.growth_stage in [GS.JOINT]:
             return min(self.config.sh_degree, int(math.sqrt(self.growth_index)))
