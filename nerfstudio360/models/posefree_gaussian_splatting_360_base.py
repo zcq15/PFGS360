@@ -129,8 +129,8 @@ class PoseFreeGSplat360BaseModelConfig(ModelConfig):
 
     # Gaussians regularization
     opacity_ratio: float = 0.01
-    scale_ratio: float = 0
-    phys_ratio: float = 0
+    scale_ratio: float = 0.01
+    phys_ratio: float = 0.1
     dist_ratio: float = 0.01
 
     background_color: Literal["random", "black", "white"] = "random"
